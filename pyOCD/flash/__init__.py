@@ -35,6 +35,7 @@ FLASH = {
          'kl25z': Flash_klxx,
          'kl26z': Flash_klxx,
          'kl46z': Flash_klxx,
+         'kw01z': Flash_klxx,
          'k20d50m': Flash_k20d50m,
          'k22f': Flash_k22f,
          'k64f': Flash_k64f,
