@@ -59,7 +59,7 @@ class PyUSB(Interface):
         while not self.closed:
             self.read_sem.acquire()
             if not self.closed:
-                # Timeouts appear to corrupt data occasionally.  Because of this the 
+                # Timeouts appear to corrupt data occasionally.  Because of this the
                 # timeout is set to infinite.
                 self.rcv_data.append(self.ep_in.read(self.ep_in.wMaxPacketSize, -1))
 
@@ -80,8 +80,7 @@ class PyUSB(Interface):
 
         # iterate on all devices found
         for board in all_devices:
-            intf_number = 0
-            found = False
+            interface_number = -1
             
             # get active config
             config = board.get_active_configuration()
@@ -90,39 +89,29 @@ class PyUSB(Interface):
             #    - if we found a HID interface -> CMSIS-DAP
             for interface in config:
                 if interface.bInterfaceClass == 0x03:
-                    intf_number = interface.bInterfaceNumber
-                    found = True
+                    interface_number = interface.bInterfaceNumber
                     break
             
-            if found == False:
+            if interface_number == -1:
                 continue
             
             try:
-                if board.is_kernel_driver_active(intf_number) is True:
-                    board.detach_kernel_driver(intf_number)
+                if board.is_kernel_driver_active(interface_number):
+                    board.detach_kernel_driver(interface_number)
             except Exception as e:
                 print e
-                pass
-        
-            intf = usb.util.find_descriptor(config, bInterfaceNumber = intf_number)
-            ep_out = usb.util.find_descriptor(intf,
-                                              # match the first OUT endpoint
-                                              custom_match = \
-                                              lambda e: \
-                                              usb.util.endpoint_direction(e.bEndpointAddress) == \
-                                              usb.util.ENDPOINT_OUT
-                                              )
-            ep_in = usb.util.find_descriptor(intf,
-                                             # match the first IN endpoint
-                                             custom_match = \
-                                             lambda e: \
-                                             usb.util.endpoint_direction(e.bEndpointAddress) == \
-                                             usb.util.ENDPOINT_IN
-                                             )
-            product_name = usb.util.get_string(board, 256, 2)
-            vendor_name = usb.util.get_string(board, 256, 1)
+            
+            ep_in, ep_out = None, None
+            for ep in interface:
+                if ep.bEndpointAddress & 0x80:
+                    ep_in = ep
+                else:
+                    ep_out = ep
+
+            product_name = usb.util.get_string(board, 2)
+            vendor_name = usb.util.get_string(board, 1)
             """If there is no EP for OUT then we can use CTRL EP"""
-            if ep_in is None: #ep_out is None or
+            if not ep_in:
                 logging.error('Endpoints not found')
                 return None
             
@@ -132,7 +121,7 @@ class PyUSB(Interface):
             new_board.dev = board
             new_board.vid = vid
             new_board.pid = pid
-            new_board.intf_number = intf_number
+            new_board.intf_number = interface_number
             new_board.product_name = product_name
             new_board.vendor_name = vendor_name
             new_board.start_rx()
@@ -144,12 +133,17 @@ class PyUSB(Interface):
         """
         write data on the OUT endpoint associated to the HID interface
         """
-        for _ in range(64 - len(data)):
+
+        report_size = 64
+        if self.ep_out:
+            report_size = self.ep_out.wMaxPacketSize
+
+        for _ in range(report_size - len(data)):
            data.append(0)
 
         self.read_sem.release()
         
-        if self.ep_out is None:
+        if not self.ep_out:
             bmRequestType = 0x21              #Host to device request of type Class of Recipient Interface
             bmRequest     = 0x09              #Set_REPORT (HID class-specific request for transferring data over EP0)
             wValue        = 0x200             #Issuing an OUT report

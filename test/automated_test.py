@@ -22,20 +22,30 @@ sys.path.insert(0, parentdir)
 
 import pyOCD
 from pyOCD.board import MbedBoard
-from pyOCD.target.cortex_m import float2int
+from pyOCD.utility.conversion import float2int
 import logging
+from time import time
 from test_util import TestResult, Test, Logger
+import argparse
 
 from basic_test import basic_test
 from speed_test import SpeedTest
-#from flash_test import flash_test
+from cortex_test import CortexTest
+from flash_test import FlashTest
 
 
 if __name__ == "__main__":
     log_file = "automated_test_result.txt"
 
+    parser = argparse.ArgumentParser(description='pyOCD automated testing')
+    parser.add_argument('-d', '--debug', action="store_true", help='Enable debug logging')
+    args = parser.parse_args()
+
     # Setup logging
-    os.remove(log_file)
+    if os.path.exists(log_file):
+        os.remove(log_file)
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(level=level)
     logger = Logger(log_file)
     sys.stdout = logger
     sys.stderr = logger
@@ -48,25 +58,31 @@ if __name__ == "__main__":
     test = Test("Basic Test", lambda board: basic_test(board, None))
     test_list.append(test)
     test_list.append(SpeedTest())
-    #test = Test("Flash Test", flash_test)
-    #test_list.append(test)
+    test_list.append(CortexTest())
+    test_list.append(FlashTest())
 
     # Put together list of boards to test
     board_list = MbedBoard.getAllConnectedBoards(close = True, blocking = False)
 
+    start = time()
     for board in board_list:
         print("--------------------------")
         print("TESTING BOARD %s" % board.getUniqueID())
         print("--------------------------")
         for test in test_list:
+            test_start = time()
             result = test.run(board)
+            test_stop = time()
+            result.time = test_stop - test_start
             result_list.append(result)
+    stop = time()
 
     for test in test_list:
         test.print_perf_info(result_list)
 
     Test.print_results(result_list)
     print("")
+    print("Test Time: %s" % (stop - start))
     if Test.all_tests_pass(result_list):
         print("All tests passed")
     else:

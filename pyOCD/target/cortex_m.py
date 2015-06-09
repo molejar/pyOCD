@@ -14,11 +14,14 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+from xml.etree.ElementTree import Element, SubElement, tostring
 
-from pyOCD.target.target import Target
-from pyOCD.target.target import TARGET_RUNNING, TARGET_HALTED, WATCHPOINT_READ, WATCHPOINT_WRITE, WATCHPOINT_READ_WRITE
-from pyOCD.transport.cmsis_dap import DP_REG
-import pyOCD.gdbserver.signals
+from .target import Target
+from .target import TARGET_RUNNING, TARGET_HALTED, WATCHPOINT_READ, WATCHPOINT_WRITE, WATCHPOINT_READ_WRITE
+from ..transport.cmsis_dap import DP_REG, AP_REG
+from ..transport.transport import READ_START, READ_NOW, READ_END
+from ..gdbserver import signals
+from ..utility import conversion
 import logging
 import struct
 
@@ -94,6 +97,15 @@ CDBGPWRUPREQ = 0x10000000
 TRNNORMAL = 0x00000000
 MASKLANE = 0x00000f00
 
+AHB_IDR_TO_WRAP_SIZE = {
+    0x24770011 : 0x1000,    # Used on m4 & m3 - Documented in arm_cortexm4_processor_trm_100166_0001_00_en.pdf
+                            #                   and arm_cortexm3_processor_trm_100165_0201_00_en.pdf
+    0x44770001 : 0x400,     # Used on m1 - Documented in DDI0413D_cortexm1_r1p0_trm.pdf
+    0x04770031 : 0x400,     # Used on m0+? at least on KL25Z, KL46, LPC812
+    0x04770021 : 0x400,     # Used on m0? used on nrf51, lpc11u24
+    0x74770001 : 0x400,     # Used on m0+ on KL28Z
+    }
+
 # DHCSR bit masks
 C_DEBUGEN = (1 << 0)
 C_HALT = (1 << 1)
@@ -129,13 +141,13 @@ WATCH_SIZE_TO_MASK = dict((2**i, i) for i in range(0,32))
 
 # Maps the fault code found in the IPSR to a GDB signal value.
 FAULT = [
-            pyOCD.gdbserver.signals.SIGSTOP,
-            pyOCD.gdbserver.signals.SIGSTOP,    # Reset
-            pyOCD.gdbserver.signals.SIGINT,     # NMI
-            pyOCD.gdbserver.signals.SIGSEGV,    # HardFault
-            pyOCD.gdbserver.signals.SIGSEGV,    # MemManage
-            pyOCD.gdbserver.signals.SIGBUS,     # BusFault
-            pyOCD.gdbserver.signals.SIGILL,     # UsageFault
+            signals.SIGSTOP,
+            signals.SIGSTOP,    # Reset
+            signals.SIGINT,     # NMI
+            signals.SIGSEGV,    # HardFault
+            signals.SIGSEGV,    # MemManage
+            signals.SIGBUS,     # BusFault
+            signals.SIGILL,     # UsageFault
                                                 # The rest are not faults
          ]
 
@@ -208,40 +220,6 @@ CORE_REGISTER = {
                  's31': 0x5f,
                  }
 
-"""
-convert a byte array into a word array
-"""
-def byte2word(data):
-    res = []
-    for i in range(len(data)/4):
-        res.append(data[i*4 + 0] << 0  |
-                   data[i*4 + 1] << 8  |
-                   data[i*4 + 2] << 16 |
-                   data[i*4 + 3] << 24)
-    return res
-
-"""
-convert a word array into a byte array
-"""
-def word2byte(data):
-    res = []
-    for x in data:
-        res.append((x >> 0) & 0xff)
-        res.append((x >> 8) & 0xff)
-        res.append((x >> 16) & 0xff)
-        res.append((x >> 24) & 0xff)
-    return res
-
-## @brief Convert a 32-bit int to an IEEE754 float.
-def int2float(data):
-    d = struct.pack("@I", data)
-    return struct.unpack("@f", d)[0]
-## @brief Convert an IEEE754 float to a 32-bit int.
-def float2int(data):
-    d = struct.pack("@f", data)
-    return struct.unpack("@I", d)[0]
-
-
 class Breakpoint(object):
     def __init__(self, comp_register_addr):
         self.comp_register_addr = comp_register_addr
@@ -267,98 +245,87 @@ class CortexM(Target):
        - set/remove hardware breakpoints
     """
 
-    targetCoreXML = """<?xml version="1.0"?>
-<!DOCTYPE feature SYSTEM "gdb-target.dtd">
-<target>
-    <feature name="org.gnu.gdb.arm.m-profile">
-        <reg name="r0" bitsize="32"/>
-        <reg name="r1" bitsize="32"/>
-        <reg name="r2" bitsize="32"/>
-        <reg name="r3" bitsize="32"/>
-        <reg name="r4" bitsize="32"/>
-        <reg name="r5" bitsize="32"/>
-        <reg name="r6" bitsize="32"/>
-        <reg name="r7" bitsize="32"/>
-        <reg name="r8" bitsize="32"/>
-        <reg name="r9" bitsize="32"/>
-        <reg name="r10" bitsize="32"/>
-        <reg name="r11" bitsize="32"/>
-        <reg name="r12" bitsize="32"/>
-        <reg name="sp" bitsize="32" type="data_ptr"/>
-        <reg name="lr" bitsize="32"/>
-        <reg name="pc" bitsize="32" type="code_ptr"/>
-        <reg name="xpsr" bitsize="32" regnum="16"/>
-    </feature>
-</target>
-"""
-    targetFpuXML = """<?xml version="1.0"?>
-<!DOCTYPE feature SYSTEM "gdb-target.dtd">
-<target>
-    <feature name="org.gnu.gdb.arm.m-profile">
-        <reg name="r0" bitsize="32"/>
-        <reg name="r1" bitsize="32"/>
-        <reg name="r2" bitsize="32"/>
-        <reg name="r3" bitsize="32"/>
-        <reg name="r4" bitsize="32"/>
-        <reg name="r5" bitsize="32"/>
-        <reg name="r6" bitsize="32"/>
-        <reg name="r7" bitsize="32"/>
-        <reg name="r8" bitsize="32"/>
-        <reg name="r9" bitsize="32"/>
-        <reg name="r10" bitsize="32"/>
-        <reg name="r11" bitsize="32"/>
-        <reg name="r12" bitsize="32"/>
-        <reg name="sp" bitsize="32" type="data_ptr"/>
-        <reg name="lr" bitsize="32"/>
-        <reg name="pc" bitsize="32" type="code_ptr"/>
-        <reg name="xpsr" bitsize="32" regnum="16"/>
-    </feature>
-    <feature name="org.gnu.gdb.arm.vfp">
-        <reg name="d0" bitsize="64" type="ieee_double"/>
-        <reg name="d1" bitsize="64" type="ieee_double"/>
-        <reg name="d2" bitsize="64" type="ieee_double"/>
-        <reg name="d3" bitsize="64" type="ieee_double"/>
-        <reg name="d4" bitsize="64" type="ieee_double"/>
-        <reg name="d5" bitsize="64" type="ieee_double"/>
-        <reg name="d6" bitsize="64" type="ieee_double"/>
-        <reg name="d7" bitsize="64" type="ieee_double"/>
-        <reg name="d8" bitsize="64" type="ieee_double"/>
-        <reg name="d9" bitsize="64" type="ieee_double"/>
-        <reg name="d10" bitsize="64" type="ieee_double"/>
-        <reg name="d11" bitsize="64" type="ieee_double"/>
-        <reg name="d12" bitsize="64" type="ieee_double"/>
-        <reg name="d13" bitsize="64" type="ieee_double"/>
-        <reg name="d14" bitsize="64" type="ieee_double"/>
-        <reg name="d15" bitsize="64" type="ieee_double"/>
-        <reg name="fpscr" bitsize="32" type="int" group="float"/>
-    </feature>
-</target>
-"""
+    class RegisterInfo(object):
+        def __init__(self, name, bitsize, reg_type, reg_group):
+            self.name = name
+            self.reg_num = CORE_REGISTER[name]
+            self.gdb_xml_attrib = {}
+            self.gdb_xml_attrib['name'] = str(name)
+            self.gdb_xml_attrib['bitsize'] = str(bitsize)
+            self.gdb_xml_attrib['type'] = str(reg_type)
+            self.gdb_xml_attrib['group'] = str(reg_group)
 
-    coreRegisters = [
-                       'r0', 'r1', 'r2',   'r3',
-                       'r4', 'r5', 'r6',   'r7',
-                       'r8', 'r9', 'r10', 'r11',
-                      'r12', 'sp', 'lr',   'pc',
-                      'xpsr'
-                    ]
+    regs_general = [
+        #            Name       bitsize     type            group
+        RegisterInfo('r0',      32,         'int',          'general'),
+        RegisterInfo('r1',      32,         'int',          'general'),
+        RegisterInfo('r2',      32,         'int',          'general'),
+        RegisterInfo('r3',      32,         'int',          'general'),
+        RegisterInfo('r4',      32,         'int',          'general'),
+        RegisterInfo('r5',      32,         'int',          'general'),
+        RegisterInfo('r6',      32,         'int',          'general'),
+        RegisterInfo('r7',      32,         'int',          'general'),
+        RegisterInfo('r8',      32,         'int',          'general'),
+        RegisterInfo('r9',      32,         'int',          'general'),
+        RegisterInfo('r10',     32,         'int',          'general'),
+        RegisterInfo('r11',     32,         'int',          'general'),
+        RegisterInfo('r12',     32,         'int',          'general'),
+        RegisterInfo('sp',      32,         'data_ptr',     'general'),
+        RegisterInfo('lr',      32,         'int',          'general'),
+        RegisterInfo('pc',      32,         'code_ptr',     'general'),
+        RegisterInfo('xpsr',    32,         'int',          'general'),
+        RegisterInfo('msp',     32,         'int',          'general'),
+        RegisterInfo('psp',     32,         'int',          'general'),
+        RegisterInfo('primask', 32,         'int',          'general'),
+        RegisterInfo('control', 32,         'int',          'general'),
+        ]
 
-    fpuRegisters = [
-                      's0',  's1',  's2',  's3',
-                      's4',  's5',  's6',  's7',
-                      's8',  's9', 's10', 's11',
-                     's12', 's13', 's14', 's15',
-                     's16', 's17', 's18', 's19',
-                     's20', 's21', 's22', 's23',
-                     's24', 's25', 's26', 's27',
-                     's28', 's29', 's30', 's31',
-                     'fpscr'
-                    ]
+    regs_system_armv7_only = [
+        #            Name       bitsize     type            group
+        RegisterInfo('basepri',     32,     'int',          'general'),
+        RegisterInfo('faultmask',   32,     'int',          'general'),
+        ]
+
+    regs_float = [
+        #            Name       bitsize     type            group
+        RegisterInfo('fpscr',   32,         'int',          'float'),
+        RegisterInfo('s0' ,     32,         'float',        'float'),
+        RegisterInfo('s1' ,     32,         'float',        'float'),
+        RegisterInfo('s2' ,     32,         'float',        'float'),
+        RegisterInfo('s3' ,     32,         'float',        'float'),
+        RegisterInfo('s4' ,     32,         'float',        'float'),
+        RegisterInfo('s5' ,     32,         'float',        'float'),
+        RegisterInfo('s6' ,     32,         'float',        'float'),
+        RegisterInfo('s7' ,     32,         'float',        'float'),
+        RegisterInfo('s8' ,     32,         'float',        'float'),
+        RegisterInfo('s9' ,     32,         'float',        'float'),
+        RegisterInfo('s10',     32,         'float',        'float'),
+        RegisterInfo('s11',     32,         'float',        'float'),
+        RegisterInfo('s12',     32,         'float',        'float'),
+        RegisterInfo('s13',     32,         'float',        'float'),
+        RegisterInfo('s14',     32,         'float',        'float'),
+        RegisterInfo('s15',     32,         'float',        'float'),
+        RegisterInfo('s16',     32,         'float',        'float'),
+        RegisterInfo('s17',     32,         'float',        'float'),
+        RegisterInfo('s18',     32,         'float',        'float'),
+        RegisterInfo('s19',     32,         'float',        'float'),
+        RegisterInfo('s20',     32,         'float',        'float'),
+        RegisterInfo('s21',     32,         'float',        'float'),
+        RegisterInfo('s22',     32,         'float',        'float'),
+        RegisterInfo('s23',     32,         'float',        'float'),
+        RegisterInfo('s24',     32,         'float',        'float'),
+        RegisterInfo('s25',     32,         'float',        'float'),
+        RegisterInfo('s26',     32,         'float',        'float'),
+        RegisterInfo('s27',     32,         'float',        'float'),
+        RegisterInfo('s28',     32,         'float',        'float'),
+        RegisterInfo('s29',     32,         'float',        'float'),
+        RegisterInfo('s30',     32,         'float',        'float'),
+        RegisterInfo('s31',     64,         'float',        'float'),
+        ]
 
     def __init__(self, transport):
         super(CortexM, self).__init__(transport)
 
-        self.auto_increment_page_size = 0
         self.idcode = 0
         self.breakpoints = []
         self.nb_code = 0
@@ -374,32 +341,61 @@ class CortexM(Target):
         self.has_fpu = False
         self.part_number = self.__class__.__name__
 
-    def init(self, setup_fpb = True, setup_dwt = True):
+    def init(self, initial_setup=True, bus_accessible=True):
         """
         Cortex M initialization
         """
-        self.idcode = self.readIDCode()
-        # select bank 0 (to access DRW and TAR)
-        self.transport.writeDP(DP_REG['SELECT'], 0)
-        self.transport.writeDP(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ)
+        if initial_setup:
+            self.idcode = self.readIDCode()
+            # select bank 0 (to access DRW and TAR)
+            self.transport.writeDP(DP_REG['SELECT'], 0)
+            self.transport.writeDP(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ)
 
-        while True:
-            r = self.transport.readDP(DP_REG['CTRL_STAT'])
-            if (r & (CDBGPWRUPACK | CSYSPWRUPACK)) == (CDBGPWRUPACK | CSYSPWRUPACK):
-                break
+            while True:
+                r = self.transport.readDP(DP_REG['CTRL_STAT'])
+                if (r & (CDBGPWRUPACK | CSYSPWRUPACK)) == (CDBGPWRUPACK | CSYSPWRUPACK):
+                    break
 
-        self.transport.writeDP(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ | TRNNORMAL | MASKLANE)
-        self.transport.writeDP(DP_REG['SELECT'], 0)
+            self.transport.writeDP(DP_REG['CTRL_STAT'], CSYSPWRUPREQ | CDBGPWRUPREQ | TRNNORMAL | MASKLANE)
+            self.transport.writeDP(DP_REG['SELECT'], 0)
 
-        if setup_fpb:
+            ahb_idr = self.transport.readAP(AP_REG['IDR'])
+            if ahb_idr in AHB_IDR_TO_WRAP_SIZE:
+                self.auto_increment_page_size = AHB_IDR_TO_WRAP_SIZE[ahb_idr]
+            else:
+                # If unknown use the smallest size supported by all targets.
+                # A size smaller than the supported size will decrease performance
+                # due to the extra address writes, but will not create any
+                # read/write errors.
+                auto_increment_page_size = 0x400
+                logging.warning("Unknown AHB IDR: 0x%x" % ahb_idr)
+
+        if bus_accessible:
             self.halt()
             self.setupFPB()
             self.readCoreType()
             self.checkForFPU()
-
-        if setup_dwt:
-            self.halt()
             self.setupDWT()
+
+            # Build register_list and targetXML
+            self.register_list = []
+            xml_root = Element('target')
+            xml_regs_general = SubElement(xml_root, "feature", name="org.gnu.gdb.arm.m-profile")
+            for reg in self.regs_general:
+                self.register_list.append(reg)
+                SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
+            # Check if target has ARMv7 registers
+            if self.core_type in  (ARM_CortexM3, ARM_CortexM4):
+                for reg in self.regs_system_armv7_only:
+                    self.register_list.append(reg)
+                    SubElement(xml_regs_general, 'reg',  **reg.gdb_xml_attrib)
+            # Check if target has FPU registers
+            if self.has_fpu:
+                #xml_regs_fpu = SubElement(xml_root, "feature", name="org.gnu.gdb.arm.vfp")
+                for reg in self.regs_float:
+                    self.register_list.append(reg)
+                    SubElement(xml_regs_general, 'reg', **reg.gdb_xml_attrib)
+            self.targetXML = '<?xml version="1.0"?><!DOCTYPE feature SYSTEM "gdb-target.dtd">' + tostring(xml_root)
 
     ## @brief Read the CPUID register and determine core type.
     def readCoreType(self):
@@ -475,6 +471,9 @@ class CortexM(Target):
     def info(self, request):
         return self.transport.info(request)
 
+    def flush(self):
+        self.transport.flush()
+
     def readIDCode(self):
         """
         return the IDCODE of the core
@@ -509,12 +508,12 @@ class CortexM(Target):
         """
         self.writeMemory(addr, value, 8)
 
-    def readMemory(self, addr, transfer_size = 32):
+    def readMemory(self, addr, transfer_size = 32, mode = READ_NOW):
         """
         read a memory location. By default, a word will
         be read
         """
-        return self.transport.readMem(addr, transfer_size)
+        return self.transport.readMem(addr, transfer_size, mode)
 
     def read32(self, addr):
         """
@@ -560,9 +559,9 @@ class CortexM(Target):
 
         # try to read aligned block of 32bits
         if (size >= 4):
-            logging.debug("read blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
+            #logging.debug("read blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
             mem = self.readBlockMemoryAligned32(addr, size/4)
-            res += word2byte(mem)
+            res += conversion.word2byte(mem)
             size -= 4*len(mem)
             addr += 4*len(mem)
 
@@ -609,8 +608,8 @@ class CortexM(Target):
 
         # write aligned block of 32 bits
         if (size >= 4):
-            logging.debug("write blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
-            data32 = byte2word(data[idx:idx + (size & ~0x03)])
+            #logging.debug("write blocks aligned at 0x%X, size: 0x%X", addr, (size/4)*4)
+            data32 = conversion.byte2word(data[idx:idx + (size & ~0x03)])
             self.writeBlockMemoryAligned32(addr, data32)
             addr += size & ~0x03
             idx += size & ~0x03
@@ -669,18 +668,19 @@ class CortexM(Target):
         halt the core
         """
         self.writeMemory(DHCSR, DBGKEY | C_DEBUGEN | C_HALT)
+        self.flush()
         return
 
     def step(self, disable_interrupts = True):
         """
-        perform an instruction level step.  This function preserves the previous 
+        perform an instruction level step.  This function preserves the previous
         interrupt mask state
         """
         # Was 'if self.getState() != TARGET_HALTED:'
         # but now value of dhcsr is saved
         dhcsr = self.readMemory(DHCSR)
         if not (dhcsr & (C_STEP | C_HALT)):
-            logging.debug('cannot step: target not halted')
+            logging.error('cannot step: target not halted')
             return
 
         self.clearDebugCauseBits()
@@ -707,6 +707,7 @@ class CortexM(Target):
             # Unmask interrupts - C_HALT must be set when changing to C_MASKINTS
             self.writeMemory(DHCSR, DBGKEY | C_DEBUGEN | C_HALT )
 
+        self.flush()
         return
 
     def clearDebugCauseBits(self):
@@ -720,9 +721,11 @@ class CortexM(Target):
         if software_reset == None:
             # Default to software reset if nothing is specified
             software_reset = True
-        
+
         if software_reset:
             self.writeMemory(NVIC_AIRCR, NVIC_AIRCR_VECTKEY | NVIC_AIRCR_SYSRESETREQ)
+            # Without a flush a transfer error can occur
+            self.flush()
         else:
             self.transport.reset()
 
@@ -753,6 +756,9 @@ class CortexM(Target):
     def setTargetState(self, state):
         if state == "PROGRAM":
             self.resetStopOnReset(True)
+            # Write the thumb bit in case the reset handler
+            # points to an ARM address
+            self.writeCoreRegister('xpsr', 0x1000000)
 
     def getState(self):
         dhcsr = self.readMemory(DHCSR)
@@ -769,6 +775,7 @@ class CortexM(Target):
             return
         self.clearDebugCauseBits()
         self.writeMemory(DHCSR, DBGKEY | C_DEBUGEN)
+        self.flush()
         return
 
     def findBreakpoint(self, addr):
@@ -786,7 +793,7 @@ class CortexM(Target):
         regValue = self.readCoreRegisterRaw(regIndex)
         # Convert int to float.
         if regIndex >= 0x40:
-            regValue = int2float(regValue)
+            regValue = conversion.int2float(regValue)
         return regValue
 
     def registerNameToIndex(self, reg):
@@ -809,35 +816,57 @@ class CortexM(Target):
         If reg is a string, find the number associated to this register
         in the lookup table CORE_REGISTER
         """
-        reg = self.registerNameToIndex(reg)
+        vals = self.readCoreRegistersRaw([reg])
+        return vals[0]
 
-        if (reg < 0) and (reg >= -4):
-            specialReg = reg
-            reg = CORE_REGISTER['cfbp']
-        else:
-            specialReg = 0
+    def readCoreRegistersRaw(self, reg_list):
+        """
+        Read one or more core registers
 
-        if reg not in CORE_REGISTER.values():
-            logging.error("unknown reg: %d", reg)
-            return
-        elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
-            logging.error("attempt to read FPU register without FPU")
-            return
+        Read core registers in reg_list and return a list of values.
+        If any register in reg_list is a string, find the number
+        associated to this register in the lookup table CORE_REGISTER.
+        """
+        # convert to index only
+        reg_list = [self.registerNameToIndex(reg) for reg in reg_list]
 
-        # write id in DCRSR
-        self.writeMemory(DCRSR, reg)
+        # Sanity check register values
+        for reg in reg_list:
+            if reg not in CORE_REGISTER.values():
+                raise ValueError("unknown reg: %d" % reg)
+            elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
+                raise ValueError("attempt to read FPU register without FPU")
 
-        # Technically, we need to poll S_REGRDY in DHCSR here before reading DCRDR. But
-        # we're running so slow compared to the target that it's not necessary.
+        # Begin all reads and writes
+        for reg in reg_list:
+            if (reg < 0) and (reg >= -4):
+                reg = CORE_REGISTER['cfbp']
 
-        # read DCRDR
-        val = self.readMemory(DCRDR)
+            # write id in DCRSR
+            self.writeMemory(DCRSR, reg)
 
-        # Special handling for registers that are combined into a single DCRSR number.
-        if specialReg:
-            val = (val >> ((-specialReg - 1) * 4)) & 0xff
+            # Technically, we need to poll S_REGRDY in DHCSR here before reading DCRDR. But
+            # we're running so slow compared to the target that it's not necessary.
+            # Read it and assert that S_REGRDY is set
 
-        return val
+            self.readMemory(DHCSR, mode=READ_START)
+            self.readMemory(DCRDR, mode=READ_START)
+
+        # Read all results
+        reg_vals = []
+        for reg in reg_list:
+            dhcsr_val = self.readMemory(DHCSR, mode=READ_END)
+            assert dhcsr_val & S_REGRDY
+            # read DCRDR
+            val = self.readMemory(DCRDR, mode=READ_END)
+
+            # Special handling for registers that are combined into a single DCRSR number.
+            if (reg < 0) and (reg >= -4):
+                val = (val >> ((-reg - 1) * 8)) & 0xff
+
+            reg_vals.append(val)
+
+        return reg_vals
 
     def writeCoreRegister(self, reg, data):
         """
@@ -847,7 +876,7 @@ class CortexM(Target):
         regIndex = self.registerNameToIndex(reg)
         # Convert float to int.
         if regIndex >= 0x40:
-            data = float2int(data)
+            data = conversion.float2int(data)
         self.writeCoreRegisterRaw(regIndex, data)
 
     def writeCoreRegisterRaw(self, reg, data):
@@ -856,33 +885,58 @@ class CortexM(Target):
         If reg is a string, find the number associated to this register
         in the lookup table CORE_REGISTER
         """
-        reg = self.registerNameToIndex(reg)
+        self.writeCoreRegistersRaw([reg], [data])
 
-        if (reg < 0) and (reg >= -4):
-            specialReg = reg
-            reg = CORE_REGISTER['cfbp']
+    def writeCoreRegistersRaw(self, reg_list, data_list):
+        """
+        Write one or more core registers
 
-            # Mask in the new special register value so we don't modify the other register
-            # values that share the same DCRSR number.
-            specialRegValue = self.readCoreRegister(reg)
-            shift = (-specialReg - 1) * 4
-            mask = 0xffffffff ^ (0xff << shift)
-            data = (specialRegValue & mask) | ((data & 0xff) << shift)
-        else:
-            specialReg = 0
+        Write core registers in reg_list with the associated value in
+        data_list.  If any register in reg_list is a string, find the number
+        associated to this register in the lookup table CORE_REGISTER.
+        """
+        assert len(reg_list) == len(data_list)
+        # convert to index only
+        reg_list = [self.registerNameToIndex(reg) for reg in reg_list]
 
-        if reg not in CORE_REGISTER.values():
-            logging.error("unknown reg: %d", reg)
-            return
-        elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
-            logging.error("attempt to read FPU register without FPU")
-            return
+        # Sanity check register values
+        for reg in reg_list:
+            if reg not in CORE_REGISTER.values():
+                raise ValueError("unknown reg: %d" % reg)
+            elif ((reg >= 128) or (reg == 33)) and (not self.has_fpu):
+                raise ValueError("attempt to write FPU register without FPU")
 
-        # write DCRDR
-        self.writeMemory(DCRDR, data)
+        # Read special register if it is present in the list
+        for reg in reg_list:
+            if (reg < 0) and (reg >= -4):
+                specialRegValue = self.readCoreRegister(CORE_REGISTER['cfbp'])
+                break
 
-        # write id in DCRSR and flag to start write transfer
-        self.writeMemory(DCRSR, reg | REGWnR)
+        # Write out registers
+        for reg, data in zip(reg_list, data_list):
+            if (reg < 0) and (reg >= -4):
+                # Mask in the new special register value so we don't modify the other register
+                # values that share the same DCRSR number.
+                shift = (-reg - 1) * 8
+                mask = 0xffffffff ^ (0xff << shift)
+                data = (specialRegValue & mask) | ((data & 0xff) << shift)
+                specialRegValue = data # update special register for other writes that might be in the list
+                reg = CORE_REGISTER['cfbp']
+
+            # write DCRDR
+            self.writeMemory(DCRDR, data)
+
+            # write id in DCRSR and flag to start write transfer
+            self.writeMemory(DCRSR, reg | REGWnR)
+
+            # Technically, we need to poll S_REGRDY in DHCSR here to ensure the
+            # register write has completed.
+            # Read it and assert that S_REGRDY is set
+            self.readMemory(DHCSR, mode=READ_START)
+
+        for reg in reg_list:
+            dhcsr_val = self.readMemory(DHCSR, mode=READ_END)
+            assert dhcsr_val & S_REGRDY
 
     def setBreakpoint(self, addr):
         """
@@ -890,6 +944,12 @@ class CortexM(Target):
         """
         if self.fpb_enabled is False:
             self.enableFPB()
+
+        if addr >= 0x20000000:
+            # Hardware breakpoints are only supported in the range
+            # 0x00000000 - 0x1fffffff on cortex-m devices
+            logging.error('Breakpoint out of range 0x%X', addr)
+            return False
 
         if self.availableBreakpoint() == 0:
             logging.error('No more available breakpoint!!, dropped bp at 0x%X', addr)
@@ -1001,6 +1061,9 @@ class CortexM(Target):
             demcr = demcr & ~VC_HARDERR
         self.writeMemory(DEMCR, demcr)
 
+    def getVectorCatchFault(self):
+        return bool(self.readMemory(DEMCR) & VC_HARDERR)
+
     def setVectorCatchReset(self, enable):
         demcr = self.readMemory(DEMCR)
         if enable:
@@ -1009,13 +1072,12 @@ class CortexM(Target):
             demcr = demcr & ~VC_CORERESET
         self.writeMemory(DEMCR, demcr)
 
+    def getVectorCatchReset(self):
+        return bool(self.readMemory(DEMCR) & VC_CORERESET)
+
     # GDB functions
     def getTargetXML(self):
-        if self.has_fpu:
-            return self.targetFpuXML
-        else:
-            return self.targetCoreXML
-
+        return self.targetXML
 
     def getRegisterContext(self):
         """
@@ -1023,35 +1085,12 @@ class CortexM(Target):
         """
         logging.debug("GDB getting register context")
         resp = ''
-        # start with core integer registers
-        for regName in self.coreRegisters:
-            regValue = self.readCoreRegisterRaw(regName)
-            resp += self.intToHex8(regValue)
-            logging.debug("GDB reg: %s = 0x%X", regName, regValue)
-
-        # add FPU registers if they exist
-        if self.has_fpu:
-            for regName in self.fpuRegisters:
-                regValue = self.readCoreRegisterRaw(regName)
-                resp += self.intToHex8(regValue)
-                logging.debug("GDB reg: %s = 0x%X", regName, regValue)
-
-        return resp
-
-    def intToHex8(self, val):
-        """
-        create 8-digit hexadecimal string from 32-bit register value
-        """
-        val = hex(int(val))[2:]
-        size = len(val)
-        r = ''
-        for i in range(8-size):
-            r += '0'
-        r += str(val)
-
-        resp = ''
-        for i in range(4):
-            resp += r[8 - 2*i - 2: 8 - 2*i]
+        reg_num_list = map(lambda reg:reg.reg_num, self.register_list)
+        vals = self.readCoreRegistersRaw(reg_num_list)
+        #print("Vals: %s" % vals)
+        for reg, regValue in zip(self.register_list, vals):
+            resp += conversion.intToHex8(regValue)
+            logging.debug("GDB reg: %s = 0x%X", reg.name, regValue)
 
         return resp
 
@@ -1060,25 +1099,15 @@ class CortexM(Target):
         Set registers from GDB hexadecimal string.
         """
         logging.debug("GDB setting register context")
-        # start with core integer registers
-        for regName in self.coreRegisters:
-            regValue = self.hex8ToInt(data)
-            self.writeCoreRegisterRaw(regName, regValue)
-            logging.debug("GDB reg: %s = 0x%X", regName, regValue)
+        reg_num_list = []
+        reg_data_list = []
+        for reg in self.register_list:
+            regValue = conversion.hex8ToInt(data)
+            reg_num_list.append(reg.reg_num)
+            reg_data_list.append(regValue)
+            logging.debug("GDB reg: %s = 0x%X", reg.name, regValue)
             data = data[8:]
-        # write FPU registers if they exist
-        if self.has_fpu:
-            for regName in self.fpuRegisters:
-                regValue = self.hex8ToInt(data)
-                self.writeCoreRegisterRaw(regName, regValue)
-                logging.debug("GDB reg: %s = 0x%X", regName, regValue)
-                data = data[8:]
-
-    def hex8ToInt(self, data):
-        """
-        build 32-bit register value from little-endian 8-digit hexadecimal string.
-        """
-        return int(data[6:8] + data[4:6] + data[2:4] + data[0:2], 16)
+        self.writeCoreRegistersRaw(reg_num_list, reg_data_list)
 
     def setRegister(self, reg, data):
         """
@@ -1087,23 +1116,20 @@ class CortexM(Target):
         """
         if reg < 0:
             return
-        elif reg < len(self.coreRegisters):
-            regName = self.coreRegisters[reg]
-            value = self.hex8ToInt(data)
+        elif reg < len(self.register_list):
+            regName = self.register_list[reg].name
+            value = conversion.hex8ToInt(data)
             logging.debug("GDB: write reg %s: 0x%X", regName, value)
             self.writeCoreRegisterRaw(regName, value)
-        elif (reg - len(self.coreRegisters)) < len(self.fpuRegisters) / 2:
-            # GDB passes in offset to 64-bit d* register but writeCoreRegisterRaw()
-            # just supports writing of the two separate 32-bit s* components.
-            fpuRegOffset = (reg - len(self.coreRegisters)) * 2
-            evenRegName = self.fpuRegisters[fpuRegOffset]
-            oddRegName = self.fpuRegisters[fpuRegOffset + 1]
-            evenValue = self.hex8ToInt(data)
-            oddValue = self.hex8ToInt(data[8:])
-            logging.debug("GDB: write reg %s: 0x%X", evenRegName, evenValue)
-            self.writeCoreRegisterRaw(evenRegName, evenValue)
-            logging.debug("GDB: write reg %s: 0x%X", oddRegName, oddValue)
-            self.writeCoreRegisterRaw(oddRegName, oddValue)
+
+    def gdbGetRegister(self, reg):
+        resp = ''
+        if reg < len(self.register_list):
+            regName = self.register_list[reg].name
+            regValue = self.readCoreRegisterRaw(regName)
+            resp = conversion.intToHex8(regValue)
+            logging.debug("GDB reg: %s = 0x%X", regName, regValue)
+        return resp
 
     def getTResponse(self, gdbInterrupt = False):
         """
@@ -1112,28 +1138,25 @@ class CortexM(Target):
             The current value of the important registers (sp, lr, pc).
         """
         if gdbInterrupt:
-            response = 'T' + self.intToHex2(pyOCD.gdbserver.signals.SIGINT)
+            response = 'T' + conversion.intToHex2(signals.SIGINT)
         else:
-            response = 'T' + self.intToHex2(self.getSignalValue())
+            response = 'T' + conversion.intToHex2(self.getSignalValue())
 
         # Append fp(r7), sp(r13), lr(r14), pc(r15)
-        response += self.getRegIndexValuePair(7)
-        response += self.getRegIndexValuePair(13)
-        response += self.getRegIndexValuePair(14)
-        response += self.getRegIndexValuePair(15)
+        response += self.getRegIndexValuePairs([7, 13, 14, 15])
 
         return response
 
     def getSignalValue(self):
         if self.isDebugTrap():
-            return pyOCD.gdbserver.signals.SIGTRAP
+            return signals.SIGTRAP
 
         fault = self.readCoreRegister('xpsr') & 0xff
         try:
             signal = FAULT[fault]
         except:
             # If not a fault then default to SIGSTOP
-            signal = pyOCD.gdbserver.signals.SIGSTOP
+            signal = signals.SIGSTOP
         logging.debug("GDB lastSignal: %d", signal)
         return signal
 
@@ -1141,21 +1164,15 @@ class CortexM(Target):
         debugEvents = self.readMemory(DFSR) & (DFSR_DWTTRAP | DFSR_BKPT | DFSR_HALTED)
         return debugEvents != 0
 
-    def getRegIndexValuePair(self, regIndex):
+    def getRegIndexValuePairs(self, regIndexList):
         """
-        Returns a string like NN:MMMMMMMM for the T response string.
-            NN is the index of the register to follow
-            MMMMMMMM is the value of the register
+        Returns a string like NN:MMMMMMMM;NN:MMMMMMMM;...
+            for the T response string.  NN is the index of the
+            register to follow MMMMMMMM is the value of the register.
         """
-        regName = self.coreRegisters[regIndex]
-        return self.intToHex2(regIndex) + ':' + self.intToHex8(self.readCoreRegisterRaw(regName)) + ';'
+        str = ''
+        regList = self.readCoreRegistersRaw(regIndexList)
+        for regIndex, reg in zip(regIndexList, regList):
+            str += conversion.intToHex2(regIndex) + ':' + conversion.intToHex8(reg) + ';'
+        return str
 
-    def intToHex2(self, val):
-        """
-        create 2-digit hexadecimal string from 8-bit value
-        """
-        val = hex(int(val))[2:]
-        if len(val) < 2:
-            return '0' + val
-        else:
-            return val

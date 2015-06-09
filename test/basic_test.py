@@ -25,7 +25,7 @@ sys.path.insert(0, parentdir)
 
 import pyOCD
 from pyOCD.board import MbedBoard
-from pyOCD.target.cortex_m import float2int
+from pyOCD.utility.conversion import float2int
 import logging
 
 def basic_test(board_id, file):
@@ -40,8 +40,7 @@ def basic_test(board_id, file):
         target_type = board.getTargetType()
 
         if file is None:
-            binary_file += target_type + ".bin"
-            binary_file = os.path.join(parentdir, 'binaries', binary_file)
+            binary_file = os.path.join(parentdir, 'binaries', board.getTestBinary())
         else:
             binary_file = file
 
@@ -65,6 +64,10 @@ def basic_test(board_id, file):
             addr = 0x20000001
             size = 0x502
             addr_flash = 0x10000
+        elif target_type == "kl28z":
+            addr = 0x20000001
+            size = 0x502
+            addr_flash = 0x10000
         elif target_type == "k64f":
             addr = 0x20000001
             size = 0x502
@@ -85,7 +88,7 @@ def basic_test(board_id, file):
             addr = 0x10000001
             size = 0x502
             addr_flash = 0x2000
-        elif target_type == "nrf51822":
+        elif target_type == "nrf51":
             addr = 0x20000001
             size = 0x502
             addr_flash = 0x20000
@@ -162,9 +165,25 @@ def basic_test(board_id, file):
         target.halt()
         print "HALT: pc: 0x%X" % target.readCoreRegister('pc')
         sleep(0.2)
-        
-        
-        
+
+
+        print "\r\n\r\n------ TEST STEP ------"
+
+        print "reset and halt"
+        target.resetStopOnReset()
+        currentPC = target.readCoreRegister('pc')
+        print "HALT: pc: 0x%X" % currentPC
+        sleep(0.2)
+
+        for i in range(4):
+            print "step"
+            target.step()
+            newPC = target.readCoreRegister('pc')
+            print "STEP: pc: 0x%X" % newPC
+            currentPC = newPC
+            sleep(0.2)
+
+
         print "\r\n\r\n------ TEST READ / WRITE MEMORY ------"
         target.halt()
         print "READ32/WRITE32"
@@ -242,10 +261,11 @@ def basic_test(board_id, file):
         target.reset()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-
     parser = argparse.ArgumentParser(description='A CMSIS-DAP python debugger')
     parser.add_argument('-f', help='binary file', dest = "file")
+    parser.add_argument('-d', '--debug', action="store_true", help='Enable debug logging')
     args = parser.parse_args()
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(level=level)
     file = args.file
     basic_test(None, file)
