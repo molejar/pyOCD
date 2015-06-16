@@ -99,6 +99,21 @@ def speed_test(board_id):
             ram_size = 0x4000
             rom_start = 0x00000000
             rom_size = 0x20000
+        elif target_type == "kv10z":
+            ram_start = 0x1ffff800
+            ram_size = 0x2000
+            rom_start = 0x00000000
+            rom_size = 0x8000
+        elif target_type == "kv11z":
+            ram_start = 0x1ffff000
+            ram_size = 16*1024
+            rom_start = 0x00000000
+            rom_size = 128*1024
+        elif target_type == "kv58f":
+            ram_start = 0x20000000
+            ram_size = 0x20000
+            rom_start = 0x10000000
+            rom_size = 0x100000
         elif target_type == "k22f":
             ram_start = 0x1fff0000
             ram_size = 0x20000

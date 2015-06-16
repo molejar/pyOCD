@@ -127,6 +127,21 @@ def flash_test(board_id):
             ram_size = 0x8000
             rom_start = 0x00000000
             rom_size = 0x40000
+        elif target_type == "kw01z":
+            ram_start = 0x1ffff000
+            ram_size = 0x4000
+            rom_start = 0x00000000
+            rom_size = 0x20000
+        elif target_type == "kv10z":
+            ram_start = 0x1ffff800
+            ram_size = 0x2000
+            rom_start = 0x00000000
+            rom_size = 0x8000
+        elif target_type == "kv11z":
+            ram_start = 0x1ffff000
+            ram_size = 0x4000
+            rom_start = 0x00000000
+            rom_size = 0x20000
         elif target_type == "k22f":
             ram_start = 0x1fff0000
             ram_size = 0x20000
@@ -136,6 +151,11 @@ def flash_test(board_id):
             ram_start = 0x1FFF0000
             ram_size = 0x40000
             rom_start = 0x00000000
+            rom_size = 0x100000
+        elif target_type == "kv58f":
+            ram_start = 0x20000000
+            ram_size = 0x20000
+            rom_start = 0x10000000
             rom_size = 0x100000
         elif target_type == "lpc11u24":
             ram_start = 0x10000000
@@ -278,7 +298,7 @@ def flash_test(board_id):
         print "\r\n\r\n------ Test Basic Page Erase (Entire chip) ------"
         new_data = list(data)
         new_data.extend(unused * [0x77])
-        info = flash.flashBlock(0, new_data, False, False, progress_cb = print_progress)
+        info = flash.flashBlock(addr, new_data, False, False, progress_cb = print_progress)
         if info.program_type == FLASH_PAGE_ERASE:
             print("TEST PASSED")
             test_pass_count += 1
@@ -288,7 +308,7 @@ def flash_test(board_id):
         test_count += 1
 
         print "\r\n\r\n------ Test Fast Verify ------"
-        info = flash.flashBlock(0, new_data, progress_cb = print_progress, fast_verify=True)
+        info = flash.flashBlock(addr, new_data, progress_cb = print_progress, fast_verify=True)
         if info.program_type == FLASH_PAGE_ERASE:
             print("TEST PASSED")
             test_pass_count += 1
@@ -376,7 +396,7 @@ def flash_test(board_id):
         print "\r\n\r\n------ Test Chip Erase Decision ------"
         new_data = list(data)
         new_data.extend([0xff] * unused) # Pad with 0xFF
-        info = flash.flashBlock(0, new_data, progress_cb = print_progress)
+        info = flash.flashBlock(addr, new_data, progress_cb = print_progress)
         if info.program_type == FLASH_CHIP_ERASE:
             print("TEST PASSED")
             test_pass_count += 1
@@ -388,7 +408,7 @@ def flash_test(board_id):
         print "\r\n\r\n------ Test Chip Erase Decision 2 ------"
         new_data = list(data)
         new_data.extend([0x00] * unused) # Pad with 0x00
-        info = flash.flashBlock(0, new_data, progress_cb = print_progress)
+        info = flash.flashBlock(addr, new_data, progress_cb = print_progress)
         if info.program_type == FLASH_CHIP_ERASE:
             print("TEST PASSED")
             test_pass_count += 1
@@ -400,7 +420,7 @@ def flash_test(board_id):
         print "\r\n\r\n------ Test Page Erase Decision ------"
         new_data = list(data)
         new_data.extend([0x00] * unused) # Pad with 0x00
-        info = flash.flashBlock(0, new_data, progress_cb = print_progress)
+        info = flash.flashBlock(addr, new_data, progress_cb = print_progress)
         if info.program_type == FLASH_PAGE_ERASE:
             print("TEST PASSED")
             test_pass_count += 1
@@ -418,7 +438,7 @@ def flash_test(board_id):
         size_differ = unused - size_same
         new_data.extend([0x00] * size_same) # Pad 5/6 with 0x00 and 1/6 with 0xFF
         new_data.extend([0x55] * size_differ)
-        info = flash.flashBlock(0, new_data, progress_cb = print_progress)
+        info = flash.flashBlock(addr, new_data, progress_cb = print_progress)
         if info.program_type == FLASH_PAGE_ERASE:
             print("TEST PASSED")
             test_pass_count += 1

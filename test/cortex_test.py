@@ -105,6 +105,22 @@ def cortex_test(board_id):
             addr = 0x20000000
             size = 0x502
             addr_flash = 0x10000
+        elif target_type == "kw01z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10000
+        elif target_type == "kv10z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x1000
+        elif target_type == "kv11z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x1000
+        elif target_type == "kv58f":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10002000
         elif target_type == "k64f":
             addr = 0x20000000
             size = 0x502
@@ -161,7 +177,7 @@ def cortex_test(board_id):
         result = CortexTestResult()
 
         print "\r\n\r\n----- FLASH NEW BINARY BEFORE TEST -----"
-        flash.flashBinary(binary_file, addr_bin)
+        flash.flashBinary(binary_file, addr_flash)
         # Let the target run for a bit so it
         # can initialize the watchdog if it needs to
         target.resume()

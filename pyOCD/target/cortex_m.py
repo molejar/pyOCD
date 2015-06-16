@@ -69,6 +69,7 @@ ARM_CortexM0 = 0xC20
 ARM_CortexM1 = 0xC21
 ARM_CortexM3 = 0xC23
 ARM_CortexM4 = 0xC24
+ARM_CortexM7 = 0xC27
 ARM_CortexM0p = 0xC60
 
 # User-friendly names for core types.
@@ -77,6 +78,7 @@ CORE_TYPE_NAME = {
                  ARM_CortexM1 : "Cortex-M1",
                  ARM_CortexM3 : "Cortex-M3",
                  ARM_CortexM4 : "Cortex-M4",
+                 ARM_CortexM7 : "Cortex-M7",
                  ARM_CortexM0p : "Cortex-M0+"
                }
 

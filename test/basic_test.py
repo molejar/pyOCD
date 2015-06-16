@@ -60,14 +60,26 @@ def basic_test(board_id, file):
             addr = 0x20000001
             size = 0x502
             addr_flash = 0x10000
-        elif target_type == "kw01z":
-            addr = 0x20000001
-            size = 0x502
-            addr_flash = 0x10000
         elif target_type == "kl28z":
             addr = 0x20000001
             size = 0x502
             addr_flash = 0x10000
+        elif target_type == "kw01z":
+            addr = 0x20000001
+            size = 0x502
+            addr_flash = 0x10000
+        elif target_type == "kv10z":
+            addr = 0x20000001
+            size = 0x502
+            addr_flash = 0x1000
+        elif target_type == "kv11z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x0
+        elif target_type == "kv58f":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10000000
         elif target_type == "k64f":
             addr = 0x20000001
             size = 0x502
@@ -244,7 +256,7 @@ def basic_test(board_id, file):
         flash.init()
         for i in range(0, 3):
             flash.erasePage(addr_flash + flash.page_size * i)
-            flash.programPage( addr_flash + flash.page_size * i, fill )
+            flash.programPage(addr_flash + flash.page_size * i, fill)
         # Erase the middle page
         flash.erasePage(addr_flash + flash.page_size)
         # Verify the 1st and 3rd page were not erased, and that the 2nd page is fully erased
@@ -256,7 +268,7 @@ def basic_test(board_id, file):
             print "TEST FAILED"
             
         print "\r\n\r\n----- FLASH NEW BINARY -----"
-        flash.flashBinary(binary_file, addr_bin)
+        flash.flashBinary(binary_file, addr_flash)
 
         target.reset()
 

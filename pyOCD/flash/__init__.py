@@ -17,10 +17,13 @@
 
 from flash_cortex_m import Flash_cortex_m
 from flash_klxx import Flash_klxx
+from flash_kv10z import Flash_kv10z
+from flash_kv11z import Flash_kv11z
 from flash_kl28z import Flash_kl28z
 from flash_k20d50m import Flash_k20d50m
 from flash_k22f import Flash_k22f
 from flash_k64f import Flash_k64f
+from flash_kv58f import Flash_kv58f
 from flash_lpc800 import Flash_lpc800
 from flash_lpc11u24 import Flash_lpc11u24
 from flash_lpc1768 import Flash_lpc1768
@@ -40,6 +43,9 @@ FLASH = {
          'kl26z': Flash_klxx,
          'kl28z': Flash_kl28z,
          'kl46z': Flash_klxx,
+         'kv10z': Flash_kv10z,
+         'kv11z': Flash_kv11z,
+         'kv58f': Flash_kv58f,
          'kw01z': Flash_klxx,
          'k20d50m': Flash_k20d50m,
          'k22f': Flash_k22f,
