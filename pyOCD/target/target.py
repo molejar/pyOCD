@@ -23,63 +23,74 @@ WATCHPOINT_WRITE = 2
 WATCHPOINT_READ_WRITE = 3
 
 class Target(object):
-    
-    def __init__(self, transport):
+
+    def __init__(self, transport, memoryMap=None):
         self.transport = transport
         self.flash = None
         self.part_number = ""
-    
+        self.memory_map = memoryMap
+        self.halt_on_connect = True
+
+    def setAutoUnlock(self, doAutoUnlock):
+        pass
+
+    def isLocked(self):
+        return False
+
+    def setHaltOnConnect(self, halt):
+        self.halt_on_connect = halt
+
     def setFlash(self, flash):
         self.flash = flash
-        
+
     def init(self):
         return
-        
+
     def info(self, request):
         return
-    
+
     def readIDCode(self):
         return
-    
+
     def halt(self):
         return
-    
+
     def step(self):
         return
-    
+
     def resume(self):
         return
-    
+
     def writeMemory(self, addr, value, transfer_size = 32):
         return
-    
+
     def readMemory(self, addr, transfer_size = 32):
         return
-    
+
     def writeBlockMemoryUnaligned8(self, addr, value):
         return
-    
+
     def writeBlockMemoryAligned32(self, addr, data):
         return
-    
+
     def readBlockMemoryUnaligned8(self, addr, size):
         return
-    
+
     def readBlockMemoryAligned32(self, addr, size):
         return
-    
+
     def readCoreRegister(self, id):
         return
-    
+
     def writeCoreRegister(self, id):
         return
-    
+
     def setBreakpoint(self, addr):
         return
-    
+
     def removeBreakpoint(self, addr):
         return
-    
+
     def setWatchpoint(addr, size, type):
         return
 
@@ -88,16 +99,24 @@ class Target(object):
 
     def reset(self):
         return
-    
+
     def getState(self):
         return
-    
+
+    def getMemoryMap(self):
+        return self.memory_map
+
     # GDB functions
     def getTargetXML(self):
         return ''
-    
+
     def getMemoryMapXML(self):
-        return self.memoryMapXML
+        if self.memory_map:
+            return self.memory_map.getXML()
+        elif hasattr(self, 'memoryMapXML'):
+            return self.memoryMapXML
+        else:
+            return None
 
     def getRegisterContext(self):
         return ''
