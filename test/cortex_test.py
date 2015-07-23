@@ -105,7 +105,19 @@ def cortex_test(board_id):
             addr = 0x20000000
             size = 0x502
             addr_flash = 0x10000
+        elif target_type == "kl46z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10000
+        elif target_type == "kl81z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10000
         elif target_type == "kw01z":
+            addr = 0x20000000
+            size = 0x502
+            addr_flash = 0x10000
+        elif target_type == "kw40z":
             addr = 0x20000000
             size = 0x502
             addr_flash = 0x10000
@@ -130,10 +142,6 @@ def cortex_test(board_id):
             size = 0x502
             addr_flash = 0x10000
         elif target_type == "k20d50m":
-            addr = 0x20000000
-            size = 0x502
-            addr_flash = 0x10000
-        elif target_type == "kl46z":
             addr = 0x20000000
             size = 0x502
             addr_flash = 0x10000

@@ -19,15 +19,15 @@ from target_kinetis import Kinetis
 from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
 
-class KV11Z(Kinetis):
+
+class K66F(Kinetis):
 
     memoryMap = MemoryMap(
-            FlashRegion(    start=0,           length=0x20000,      blocksize=0x800, isBootMemory=True),
-            RamRegion(      start=0x1ffff000,  length=0x4000)
-            )
+        FlashRegion(    start=0,           length=0x200000,     blocksize=0x1000, isBootMemory=True),
+        RamRegion(      start=0x1fff0000,  length=0x40000)
+        )
 
     def __init__(self, transport):
-        super(KV11Z, self).__init__(transport, self.memoryMap)
-        self.mdm_idr = 0x001c0020
-
+        super(K66F, self).__init__(transport, self.memoryMap)
+        self.mdm_idr = 0x001c0000
 

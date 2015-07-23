@@ -23,12 +23,16 @@ import target_kl25z
 import target_kl26z
 import target_kl28z
 import target_kl46z
+import target_kl81z
 import target_kw01z
+import target_kw40z
 import target_kv10z
 import target_kv11z
 import target_kv58f
 import target_k22f
 import target_k64f
+import target_k65f
+import target_k66f
 import target_k20d50m
 import target_lpc800
 import target_lpc11u24
@@ -50,13 +54,17 @@ TARGET = {
           'kl26z': target_kl26z.KL26Z,
           'kl28z': target_kl28z.KL28x,
           'kl46z': target_kl46z.KL46Z,
+          'kl81z': target_kl81z.KL81Z,
           'kw01z': target_kw01z.KW01Z,
+          'kw40z': target_kw40z.KW40Z,
           'kv10z': target_kv10z.KV10Z,
           'kv11z': target_kv11z.KV11Z,
           'kv58f': target_kv58f.KV58F,
           'k20d50m': target_k20d50m.K20D50M,
           'k22f': target_k22f.K22F,
           'k64f': target_k64f.K64F,
+          'k65f': target_k65f.K65F,
+          'k66f': target_k66f.K66F,
           'lpc800': target_lpc800.LPC800,
           'lpc11u24': target_lpc11u24.LPC11U24,
           'lpc1768': target_lpc1768.LPC1768,

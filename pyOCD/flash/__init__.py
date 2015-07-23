@@ -17,12 +17,16 @@
 
 from flash_cortex_m import Flash_cortex_m
 from flash_klxx import Flash_klxx
+from flash_kw01z import Flash_kw01z
+from flash_kw40z import Flash_kw40z
 from flash_kv10z import Flash_kv10z
 from flash_kv11z import Flash_kv11z
 from flash_kl28z import Flash_kl28z
 from flash_k20d50m import Flash_k20d50m
 from flash_k22f import Flash_k22f
 from flash_k64f import Flash_k64f
+from flash_k65f import Flash_k65f
+from flash_k66f import Flash_k66f
 from flash_kv58f import Flash_kv58f
 from flash_lpc800 import Flash_lpc800
 from flash_lpc11u24 import Flash_lpc11u24
@@ -44,13 +48,17 @@ FLASH = {
          'kl26z': Flash_klxx,
          'kl28z': Flash_kl28z,
          'kl46z': Flash_klxx,
+         'kl81z': Flash_klxx,
          'kv10z': Flash_kv10z,
          'kv11z': Flash_kv11z,
          'kv58f': Flash_kv58f,
-         'kw01z': Flash_klxx,
+         'kw01z': Flash_kw01z,
+         'kw40z': Flash_kw40z,
          'k20d50m': Flash_k20d50m,
          'k22f': Flash_k22f,
          'k64f': Flash_k64f,
+         'k65f': Flash_k65f,
+         'k66f': Flash_k66f,
          'lpc800': Flash_lpc800,
          'lpc11u24': Flash_lpc11u24,
          'lpc1768':  Flash_lpc1768,

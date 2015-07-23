@@ -127,11 +127,21 @@ def flash_test(board_id):
             ram_size = 0x8000
             rom_start = 0x00000000
             rom_size = 0x40000
+        elif target_type == "kl81z":
+            ram_start = 0x1fffe000
+            ram_size = 0x18000
+            rom_start = 0x00000000
+            rom_size = 0x20000
         elif target_type == "kw01z":
             ram_start = 0x1ffff000
             ram_size = 0x4000
             rom_start = 0x00000000
             rom_size = 0x20000
+        elif target_type == "kw40z":
+            ram_start = 0x1ffff000
+            ram_size = 0x5000
+            rom_start = 0x00000000
+            rom_size = 0x28000
         elif target_type == "kv10z":
             ram_start = 0x1ffff800
             ram_size = 0x2000

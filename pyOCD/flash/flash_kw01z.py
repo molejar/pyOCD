@@ -67,19 +67,21 @@ flash_algo = {
     0x00100000, 0x00200000, 0x00400000, 0x00000000, 0x00000000, 0x00200000, 0x40020004, 0x00000000, 
     
     ],
-    
-    'pc_EraseChip' : 0x2000017D,
-    'pc_Init' : 0x200001E1,
-    'pc_UnInit' : 0x2000023D,
-    'pc_ProgramPage' : 0x20000201,
-    'pc_EraseSector' : 0x200001A9,
+
+    'pc_init' : 0x200001E1,
+    'pc_unInit' : 0x2000023D,
+    'pc_program_page' : 0x20000201,
+    'pc_erase_sector' : 0x200001A9,
+    'pc_eraseAll' : 0x2000017D,
     
     'static_base' : 0x20000000 + 0x00000020 + 0x0000057c,            
     'begin_data' : 0x20000000 + 0x00000A00,
     'begin_stack' : 0x20000800,
     'page_size' : 0x00000200,
+    'analyzer_supported' : False,
+    'analyzer_address' : 0x00000000  # ITCM, Analyzer 0x00000000..0x000000600
 };
               
-class Flash_mkw01z4(Flash): 
+class Flash_kw01z(Flash):
     def __init__(self, target):
-        super(Flash_mkw01z4, self).__init__(target, flash_algo)
+        super(Flash_kw01z, self).__init__(target, flash_algo)

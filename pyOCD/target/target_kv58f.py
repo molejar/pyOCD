@@ -16,27 +16,25 @@
 """
 
 from target_kinetis import Kinetis
+from .memory_map import (FlashRegion, RamRegion, MemoryMap)
 import logging
+from cortex_m import (NVIC_AIRCR, NVIC_AIRCR_SYSRESETREQ)
 from ..transport.transport import TransferError
-
 
 class KV58F(Kinetis):
 
-    memoryMapXML =  """<?xml version="1.0"?>
-<!DOCTYPE memory-map PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN" "http://sourceware.org/gdb/gdb-memory-map.dtd">
-<memory-map>
-    <memory type="flash" start="0x10000000" length="0x100000"> <property name="blocksize">0x2000</property></memory>
-    <memory type="ram" start="0x00000000" length="0x10000"> </memory>
-    <memory type="ram" start="0x18000000" length="0x1000"> </memory>
-    <memory type="ram" start="0x20000000" length="0x20000"> </memory>
-    <memory type="ram" start="0x2F000000" length="0x10000"> </memory>
-</memory-map>
-"""
+    singleMap = MemoryMap(
+        FlashRegion(name='flash', start=0x10000000, length=0x100000, blocksize=0x2000, isBootMemory=True),
+        RamRegion(name='ram0', start=0x00000000, length=0x10000),
+        RamRegion(name='ram1', start=0x18000000, length=0x1000),
+        RamRegion(name='ram2', start=0x20000000, length=0x20000),
+        RamRegion(name='ram3', start=0x2F000000, length=0x10000)
+        )
 
     def __init__(self, transport):
-        super(KV58F, self).__init__(transport)
+        super(KV58F, self).__init__(transport, self.singleMap)
         self.mdm_idr = 0x001c0030
-        self.auto_increment_page_size = 0x400
+        self.is_dual_core = False
 
     def reset(self, software_reset = None):
         try:
